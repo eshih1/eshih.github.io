@@ -1,0 +1,219 @@
+---
+title: "KPWA"
+Date: November 12, 2012
+output: 
+html_document:
+    number_sections: no
+    theme: journal
+    toc: yes
+    toc_float: yes
+    code_folding: hide
+    highlight: breezedark
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+
+pacman::p_load(tidyverse, psych, htmlTabbble, magrittr, reactable, xcolor, rsconnect)
+
+ClinicalAppts <- read_csv("Data/clinicalappts11122021.csv")
+Demo <- read_csv("Data/members11122021.csv")
+PHQGAD <- read_csv("Data/PHQGAD11122021.csv")
+
+Demo <- Demo %>% 
+  rename(`Ginger ID` = `Employer Signups Legacy Included User ID`)
+
+PHQGAD <- PHQGAD %>% 
+  rename(`Ginger ID` = `Depression Anxiety Scores User ID`)
+
+
+
+PHQGAD <- PHQGAD %>% 
+  mutate(GAD7screen = case_when(`GAD-7 pos screen` == "Yes"~ 1,
+                   `GAD-7 pos screen` == "No" ~ 0),
+         PHQ9screen = case_when(`PHQ-9 pos screen` == "Yes" ~ 1,
+                   `PHQ-9 pos screen` == "No" ~ 0))
+  
+
+ClinicalAppts <- ClinicalAppts %>% 
+  rename(`Ginger ID` = `Clinical appts Ginger ID`)
+
+ClinicalAppts_Count <- ClinicalAppts %>% 
+  filter(`Clinical appts Appointment Status` == "Complete" | `Clinical appts Appointment Status` == "Confirmed") %>% 
+  group_by(`Ginger ID`) %>% 
+  count() %>% 
+  rename(ClinicalSessions = n)
+
+Master <- Demo %>% 
+  full_join(ClinicalAppts_Count, by = c("Ginger ID")) %>% 
+  full_join(PHQGAD, by = c("Ginger ID"))
+
+Master$`Mapping to eligibility records (with locations, divisions etc) US State`<- as.factor(Master$`Mapping to eligibility records (with locations, divisions etc) US State`)
+
+Master <- Master %>% 
+  mutate(WA_other = case_when(`Mapping to eligibility records (with locations, divisions etc) US State` == "WA" ~ "WA",
+                              TRUE ~ "Other")) %>% 
+  mutate(KPWA_other = case_when(`Employer Signups Legacy Included Org` == "Kaiser Washington" ~ "KPWA",
+                                TRUE ~ "Other"))
+
+```
+
+
+
+Questions: 
+
+Do KPWA members have higher PHQGAD survey scores?
+| No, KPWA members, on average, do not have noticeably higher PHQGAD survey scores
+
+
+Do KPWA members have more clinical sessions?
+| Yes, KPWA members, on average, have almost double the amount of clinical sessions
+
+Click on column names to view by ascending/descending values
+
+```{r echo=FALSE}
+Summary <- Master %>% 
+  group_by(`Mapping to eligibility records (with locations, divisions etc) US State`) %>% 
+             summarise(Depression_Mean = round(mean(`Depression Anxiety Scores Depression Score`, na.rm = TRUE),2),
+                       Anxiety_Mean = round(mean(`Depression Anxiety Scores Anxiety Score`, na.rm = TRUE),2),
+                       ClinicalSessions_Mean = round(mean(ClinicalSessions, na.rm = TRUE),2),
+                       `PHQ9_pos` = sum(PHQ9screen, na.rm = TRUE),
+                       `GAD7_pos` = sum(GAD7screen, na.rm = TRUE)) 
+
+PHQcount <- Master %>% 
+    group_by(`Mapping to eligibility records (with locations, divisions etc) US State`) %>%
+  count(PHQ9screen) %>% 
+  subset(!is.na(PHQ9screen)) %>% 
+    group_by(`Mapping to eligibility records (with locations, divisions etc) US State`) %>%
+  summarise(totalPHQcount = sum(n))
+
+GADcount <- Master %>% 
+    group_by(`Mapping to eligibility records (with locations, divisions etc) US State`) %>%
+  count(GAD7screen) %>% 
+  subset(!is.na(GAD7screen)) %>% 
+    group_by(`Mapping to eligibility records (with locations, divisions etc) US State`) %>%
+  summarise(totalGADcount = sum(n))
+
+PHQGADcount <- PHQcount %>% 
+  full_join(GADcount, by = c("Mapping to eligibility records (with locations, divisions etc) US State"))
+
+Summary <- Summary %>% 
+  left_join(PHQGADcount, by = c("Mapping to eligibility records (with locations, divisions etc) US State"))
+
+Summary <- Summary %>% 
+  mutate(`PHQintake_%` = round((PHQ9_pos/totalPHQcount),2)) %>%  
+  mutate(`GADintake_%` = round((GAD7_pos/totalGADcount),2))
+
+Summary <- Summary %>% 
+  arrange(desc(ClinicalSessions_Mean))
+
+###
+
+
+Summary_WA <- Master %>% 
+    group_by(`WA_other`) %>% 
+             summarise(Depression_Mean = round(mean(`Depression Anxiety Scores Depression Score`, na.rm = TRUE),2),
+                       Anxiety_Mean = round(mean(`Depression Anxiety Scores Anxiety Score`, na.rm = TRUE),2),
+                       ClinicalSessions_Mean = round(mean(ClinicalSessions, na.rm = TRUE),2))
+
+```
+
+
+
+```{r echo=FALSE}
+Summary_org <- Master %>% 
+  group_by(`Employer Signups Legacy Included Org`) %>% 
+             summarise(Depression_Mean = round(mean(`Depression Anxiety Scores Depression Score`, na.rm = TRUE),2),
+                       Anxiety_Mean = round(mean(`Depression Anxiety Scores Anxiety Score`, na.rm = TRUE),2),
+                       ClinicalSessions_Mean = round(mean(ClinicalSessions, na.rm = TRUE),2),
+                       `PHQ9_pos` = sum(PHQ9screen, na.rm = TRUE),
+                       `GAD7_pos` = sum(GAD7screen, na.rm = TRUE)) 
+
+PHQcount <- Master %>% 
+    group_by(`Employer Signups Legacy Included Org`) %>%
+  count(PHQ9screen) %>% 
+  subset(!is.na(PHQ9screen)) %>% 
+    group_by(`Employer Signups Legacy Included Org`) %>%
+  summarise(totalPHQcount = sum(n))
+
+GADcount <- Master %>% 
+    group_by(`Employer Signups Legacy Included Org`) %>%
+  count(GAD7screen) %>% 
+  subset(!is.na(GAD7screen)) %>% 
+    group_by(`Employer Signups Legacy Included Org`) %>%
+  summarise(totalGADcount = sum(n))
+
+PHQGADcount <- PHQcount %>% 
+  full_join(GADcount, by = c("Employer Signups Legacy Included Org"))
+
+Summary_org <- Summary_org %>% 
+  left_join(PHQGADcount, by = c("Employer Signups Legacy Included Org"))
+
+Summary_org <- Summary_org %>% 
+  mutate(`PHQintake_%` = round((PHQ9_pos/totalPHQcount),2)) %>%  
+  mutate(`GADintake_%` = round((GAD7_pos/totalGADcount),2))
+
+Summary_org <- Summary_org %>% 
+  arrange(desc(ClinicalSessions_Mean))
+
+###
+
+
+Summary_KPWA <- Master %>% 
+    group_by(`KPWA_other`) %>% 
+             summarise(Depression_Mean = round(mean(`Depression Anxiety Scores Depression Score`, na.rm = TRUE),2),
+                       Anxiety_Mean = round(mean(`Depression Anxiety Scores Anxiety Score`, na.rm = TRUE),2),
+                       ClinicalSessions_Mean = round(mean(ClinicalSessions, na.rm = TRUE),2))
+
+Summary_org <- Summary_org %>% 
+  select(-c("totalPHQcount", "totalGADcount"))
+
+Summary <- Summary %>% 
+  select(-c("totalPHQcount", "totalGADcount"))
+
+```
+
+
+
+
+# Summary {.tabset .tabset-fade}
+
+## Across all States
+```{r echo=FALSE}
+
+Summary <- Summary %>% 
+  rename(`US State` = `Mapping to eligibility records (with locations, divisions etc) US State`)
+
+
+reactable(Summary)
+
+```
+
+## WA vs. Other States
+
+```{r echo=FALSE}
+
+reactable(Summary_WA)
+```
+
+## Across all orgs
+
+```{r}
+reactable(Summary_org)
+```
+
+## KPWA vs. other orgs
+
+```{r}
+reactable(Summary_KPWA)
+```
+
+```{r}
+deployApp()
+```
+
